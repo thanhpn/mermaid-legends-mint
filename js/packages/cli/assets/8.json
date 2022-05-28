@@ -1,0 +1,41 @@
+{
+    "name": "9",
+    "symbol": "Mermaid",
+    "image": "8.png",
+    "properties": {
+        "files": [
+            {
+                "uri": "8.png",
+                "type": "image/png"
+            }
+        ],
+        "category": "image",
+        "creators": [
+            {
+                "address": "2m3Kpy2CFbXuDShdAqVyR6BBEDthHpwP6PSq3xY2KXz5",
+                "share": 100
+            }
+        ]
+    },
+    "description": "",
+    "seller_fee_basis_points": 500,
+    "attributes": [
+        {
+            "trait_type": "background",
+            "value": "light-yellow"
+        },
+        {
+            "trait_type": "eyes",
+            "value": "star-eyes"
+        },
+        {
+            "trait_type": "mouth",
+            "value": "triangle-mouth"
+        },
+        {
+            "trait_type": "face",
+            "value": "grapefruit-face"
+        }
+    ],
+    "collection": {}
+}
