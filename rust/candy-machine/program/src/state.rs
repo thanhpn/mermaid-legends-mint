@@ -108,3 +108,13 @@ pub struct GatekeeperConfig {
     /// The gatekeeper network must support this if true.
     pub expire_on_use: bool,
 }
+
+#[account]
+#[derive(Default)]
+pub struct MermaidMetaData {
+    pub breeding_count: u8,
+}
+
+impl MermaidMetaData {
+    pub const SIZE: usize = 1;
+}
