@@ -27,8 +27,8 @@ use crate::{
         CONFIG_LINE_SIZE, EXPIRE_OFFSET, GUMDROP_ID, PREFIX,
     },
     utils::*,
-    CandyError, CandyMachine, CandyMachineData, ConfigLine, EndSettingType, WhitelistMintMode,
-    WhitelistMintSettings,
+    CandyError, CandyMachine, CandyMachineData, ConfigLine, EndSettingType, MermaidMetaData,
+    WhitelistMintMode, WhitelistMintSettings,
 };
 
 /// Mint a new NFT pseudo-randomly from the config array.
@@ -43,6 +43,7 @@ pub struct MintNFT<'info> {
     /// CHECK: account constraints checked in account trait
     #[account(seeds=[PREFIX.as_bytes(), candy_machine.key().as_ref()], bump=creator_bump)]
     candy_machine_creator: UncheckedAccount<'info>,
+    #[account(mut)]
     payer: Signer<'info>,
     /// CHECK: wallet can be any account and is not written to or read
     #[account(mut)]
@@ -60,6 +61,14 @@ pub struct MintNFT<'info> {
     /// CHECK: account checked in CPI
     #[account(mut)]
     master_edition: UncheckedAccount<'info>,
+    #[account(
+        init,
+        payer = payer,
+        space = MermaidMetaData::SIZE,
+        seeds = ["mermaid_metadata".as_bytes(), program_id.as_ref(), mint.key().as_ref()],
+        bump,
+    )]
+    pub mermaid_metadata: Box<Account<'info, MermaidMetaData>>,
     /// CHECK: account checked in CPI
     #[account(address = mpl_token_metadata::id())]
     token_metadata_program: UncheckedAccount<'info>,
