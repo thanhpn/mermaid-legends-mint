@@ -60,6 +60,14 @@ pub mod candy_machine {
         handle_mint_nft(ctx, creator_bump)
     }
 
+    pub fn breed_nft<'info>(
+        ctx: Context<'_, '_, '_, 'info, BreedNFT<'info>>,
+        config_line: ConfigLine,
+        creator_bump: u8,
+    ) -> Result<()> {
+        handle_breed_nft(ctx, config_line, creator_bump)
+    }
+
     pub fn set_collection_during_mint(ctx: Context<SetCollectionDuringMint>) -> Result<()> {
         handle_set_collection_during_mint(ctx)
     }
