@@ -28,6 +28,7 @@ pub struct CollectionPDA {
 pub struct CandyMachineData {
     pub uuid: String,
     pub price: u64,
+    pub custom_token_price: u64,
     /// The symbol for the asset
     pub symbol: String,
     /// Royalty basis points that goes to creators in secondary sales (0-10000)

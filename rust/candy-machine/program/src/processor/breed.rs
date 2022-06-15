@@ -1,13 +1,9 @@
-use std::{cell::RefMut, ops::Deref};
+use std::ops::Deref;
 
 use anchor_lang::prelude::*;
 use anchor_spl::token::Token;
-use arrayref::array_ref;
-use mpl_token_metadata::{
-    instruction::{
-        create_master_edition_v3, create_metadata_accounts_v2, update_metadata_accounts_v2,
-    },
-    state::{MAX_NAME_LENGTH, MAX_URI_LENGTH},
+use mpl_token_metadata::instruction::{
+    create_master_edition_v3, create_metadata_accounts_v2, update_metadata_accounts_v2,
 };
 use solana_gateway::{
     state::{GatewayTokenAccess, InPlaceGatewayToken},
@@ -23,18 +19,18 @@ use solana_program::{
 
 use crate::{
     constants::{
-        A_TOKEN, BLOCK_HASHES, BOT_FEE, COLLECTIONS_FEATURE_INDEX, CONFIG_ARRAY_START,
-        CONFIG_LINE_SIZE, EXPIRE_OFFSET, GUMDROP_ID, PREFIX,
+        A_TOKEN, BLOCK_HASHES, BOT_FEE, COLLECTIONS_FEATURE_INDEX, EXPIRE_OFFSET, GUMDROP_ID,
+        PREFIX,
     },
     utils::*,
     CandyError, CandyMachine, CandyMachineData, ConfigLine, EndSettingType, MermaidMetaData,
     WhitelistMintMode, WhitelistMintSettings,
 };
 
-/// Mint a new NFT pseudo-randomly from the config array.
+/// Breed a new NFT pseudo-randomly
 #[derive(Accounts)]
 #[instruction(creator_bump: u8)]
-pub struct MintNFT<'info> {
+pub struct BreedNFT<'info> {
     #[account(
     mut,
     has_one = wallet
@@ -83,23 +79,11 @@ pub struct MintNFT<'info> {
     /// CHECK: account constraints checked in account trait
     #[account(address = sysvar::instructions::id())]
     instruction_sysvar_account: UncheckedAccount<'info>,
-    // > Only needed if candy machine has a gatekeeper
-    // gateway_token
-    // > Only needed if candy machine has a gatekeeper and it has expire_on_use set to true:
-    // gateway program
-    // network_expire_feature
-    // > Only needed if candy machine has whitelist_mint_settings
-    // whitelist_token_account
-    // > Only needed if candy machine has whitelist_mint_settings and mode is BurnEveryTime
-    // whitelist_token_mint
-    // whitelist_burn_authority
-    // > Only needed if candy machine has token mint
-    // token_account_info
-    // transfer_authority_info
 }
 
-pub fn handle_mint_nft<'info>(
-    ctx: Context<'_, '_, '_, 'info, MintNFT<'info>>,
+pub fn handle_breed_nft<'info>(
+    ctx: Context<'_, '_, '_, 'info, BreedNFT<'info>>,
+    config_line: ConfigLine,
     creator_bump: u8,
 ) -> Result<()> {
     let candy_machine = &mut ctx.accounts.candy_machine;
@@ -498,18 +482,15 @@ pub fn handle_mint_nft<'info>(
         )?;
     }
 
-    let data = recent_slothashes.data.borrow();
-    let most_recent = array_ref![data, 12, 8];
-
-    let index = u64::from_le_bytes(*most_recent);
-    let modded: usize = index
-        .checked_rem(candy_machine.data.items_available)
-        .ok_or(CandyError::NumericalOverflowError)? as usize;
-
-    let config_line = get_config_line(candy_machine, modded, candy_machine.items_redeemed)?;
-
+    // increase minted item
     candy_machine.items_redeemed = candy_machine
         .items_redeemed
+        .checked_add(1)
+        .ok_or(CandyError::NumericalOverflowError)?;
+    // increase total item
+    candy_machine
+        .data
+        .items_available
         .checked_add(1)
         .ok_or(CandyError::NumericalOverflowError)?;
 
@@ -619,141 +600,4 @@ pub fn handle_mint_nft<'info>(
     )?;
 
     Ok(())
-}
-
-pub fn get_good_index(
-    arr: &mut RefMut<&mut [u8]>,
-    items_available: usize,
-    index: usize,
-    pos: bool,
-) -> Result<(usize, bool)> {
-    let mut index_to_use = index;
-    let mut taken = 1;
-    let mut found = false;
-    let bit_mask_vec_start = CONFIG_ARRAY_START
-        + 4
-        + (items_available) * CONFIG_LINE_SIZE
-        + 4
-        + items_available
-            .checked_div(8)
-            .ok_or(CandyError::NumericalOverflowError)?
-        + 4;
-
-    while taken > 0 && index_to_use < items_available {
-        let my_position_in_vec = bit_mask_vec_start
-            + index_to_use
-                .checked_div(8)
-                .ok_or(CandyError::NumericalOverflowError)?;
-        if arr[my_position_in_vec] == 255 {
-            let eight_remainder = 8 - index_to_use
-                .checked_rem(8)
-                .ok_or(CandyError::NumericalOverflowError)?;
-            let reversed = 8 - eight_remainder + 1;
-            if (eight_remainder != 0 && pos) || (reversed != 0 && !pos) {
-                if pos {
-                    index_to_use += eight_remainder;
-                } else {
-                    if index_to_use < 8 {
-                        break;
-                    }
-                    index_to_use -= reversed;
-                }
-            } else if pos {
-                index_to_use += 8;
-            } else {
-                index_to_use -= 8;
-            }
-        } else {
-            let position_from_right = 7 - index_to_use
-                .checked_rem(8)
-                .ok_or(CandyError::NumericalOverflowError)?;
-            let mask = u8::pow(2, position_from_right as u32);
-
-            taken = mask & arr[my_position_in_vec];
-
-            match taken {
-                x if x > 0 => {
-                    if pos {
-                        index_to_use += 1;
-                    } else {
-                        if index_to_use == 0 {
-                            break;
-                        }
-                        index_to_use -= 1;
-                    }
-                }
-                0 => {
-                    found = true;
-                    arr[my_position_in_vec] |= mask;
-                }
-                _ => (),
-            }
-        }
-    }
-    Ok((index_to_use, found))
-}
-
-pub fn get_config_line(
-    a: &Account<'_, CandyMachine>,
-    index: usize,
-    mint_number: u64,
-) -> Result<ConfigLine> {
-    if let Some(hs) = &a.data.hidden_settings {
-        return Ok(ConfigLine {
-            name: hs.name.clone() + "#" + &(mint_number + 1).to_string(),
-            uri: hs.uri.clone(),
-        });
-    }
-    let a_info = a.to_account_info();
-
-    let mut arr = a_info.data.borrow_mut();
-
-    let (mut index_to_use, good) =
-        get_good_index(&mut arr, a.data.items_available as usize, index, true)?;
-    if !good {
-        let (index_to_use_new, good_new) =
-            get_good_index(&mut arr, a.data.items_available as usize, index, false)?;
-        index_to_use = index_to_use_new;
-        if !good_new {
-            return err!(CandyError::CannotFindUsableConfigLine);
-        }
-    }
-
-    if arr[CONFIG_ARRAY_START + 4 + index_to_use * (CONFIG_LINE_SIZE)] == 1 {
-        return err!(CandyError::CannotFindUsableConfigLine);
-    }
-
-    let data_array = &mut arr[CONFIG_ARRAY_START + 4 + index_to_use * (CONFIG_LINE_SIZE)
-        ..CONFIG_ARRAY_START + 4 + (index_to_use + 1) * (CONFIG_LINE_SIZE)];
-
-    let mut name_vec = Vec::with_capacity(MAX_NAME_LENGTH);
-    let mut uri_vec = Vec::with_capacity(MAX_URI_LENGTH);
-
-    #[allow(clippy::needless_range_loop)]
-    for i in 4..4 + MAX_NAME_LENGTH {
-        if data_array[i] == 0 {
-            break;
-        }
-        name_vec.push(data_array[i])
-    }
-
-    #[allow(clippy::needless_range_loop)]
-    for i in 8 + MAX_NAME_LENGTH..8 + MAX_NAME_LENGTH + MAX_URI_LENGTH {
-        if data_array[i] == 0 {
-            break;
-        }
-        uri_vec.push(data_array[i])
-    }
-    let config_line: ConfigLine = ConfigLine {
-        name: match String::from_utf8(name_vec) {
-            Ok(val) => val,
-            Err(_) => return err!(CandyError::InvalidString),
-        },
-        uri: match String::from_utf8(uri_vec) {
-            Ok(val) => val,
-            Err(_) => return err!(CandyError::InvalidString),
-        },
-    };
-
-    Ok(config_line)
 }
