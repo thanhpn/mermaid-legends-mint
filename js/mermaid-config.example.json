@@ -1,0 +1,14 @@
+{
+  "price": 0,
+  "number": 2,
+  "gatekeeper": null,
+  "solTreasuryAccount": "",
+  "splTokenAccount": null,
+  "splToken": null,
+  "goLiveDate": "25 May 2020 00:00:00 GMT",
+  "endSettings": null,
+  "whitelistMintSettings": null,
+  "hiddenSettings": null,
+  "noRetainAuthority": false,
+  "noMutable": false
+}

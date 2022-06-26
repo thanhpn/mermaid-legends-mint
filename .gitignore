@@ -25,6 +25,7 @@ target
 .vscode
 bin
 config.json
+mermaid-config.json
 node_modules
 ./package-lock.json
 hfuzz_target
@@ -37,3 +38,4 @@ js/packages/candy-machine-ui/.env
 traits
 traits-configuration.json
 js/packages/cli/test/assets
+.test-legder
