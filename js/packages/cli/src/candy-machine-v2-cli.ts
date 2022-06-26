@@ -8,6 +8,7 @@ import {
   chunks,
   fromUTF8Array,
   getCandyMachineV2Config,
+  getMermaidCandyMachineV2Config,
   parseCollectionMintPubkey,
   parsePrice,
 } from './helpers/various';
@@ -28,7 +29,7 @@ import {
   getCollectionPDA,
 } from './helpers/accounts';
 
-import { uploadV2 } from './commands/upload';
+import { uploadV2, uploadV3 } from './commands/upload';
 import { verifyTokenMetadata } from './commands/verifyTokenMetadata';
 import { loadCache, saveCache } from './helpers/cache';
 import { mintV2 } from './commands/mint';
@@ -48,6 +49,11 @@ import { setCollection } from './commands/set-collection';
 import { withdrawBundlr } from './helpers/upload/arweave-bundle';
 import { CollectionData } from './types';
 import { bs58 } from '@project-serum/anchor/dist/cjs/utils/bytes';
+import {
+  loadGameJson,
+  saveItemsToCache,
+  updateConfigFile,
+} from './helpers/mermaid';
 
 program.version('0.0.2');
 const supportedImageTypes = {
@@ -1249,5 +1255,125 @@ function setLogLevel(value, prev) {
   log.info('setting the log value to: ' + value);
   log.setLevel(value);
 }
+
+programCommand('fetch_json', { requireWallet: false })
+  .requiredOption(
+    '-cp, --config-path <string>',
+    'JSON file with candy machine settings',
+  )
+  .action(async (_, cmd) => {
+    const { env, cacheName, configPath } = cmd.opts();
+    const items = await loadGameJson();
+
+    await updateConfigFile(configPath, items.length);
+
+    await saveItemsToCache(cacheName, env, items);
+  });
+
+programCommand('upload_json')
+  .requiredOption(
+    '-cp, --config-path <string>',
+    'JSON file with candy machine settings',
+  )
+  .option(
+    '-r, --rpc-url <string>',
+    'custom rpc url since this is a heavy command',
+  )
+  .option(
+    '-rl, --rate-limit <number>',
+    'max number of concurrent requests for the write indices command',
+    myParseInt,
+    5,
+  )
+  .option(
+    '-m, --collection-mint <string>',
+    'optional collection mint ID. Will be randomly generated if not provided',
+  )
+  .option(
+    '-nc, --no-set-collection-mint',
+    'optional flag to prevent the candy machine from using an on chain collection',
+  )
+  .action(async (_, cmd) => {
+    const {
+      keypair,
+      env,
+      cacheName,
+      configPath,
+      rpcUrl,
+      rateLimit,
+      collectionMint,
+      setCollectionMint,
+    } = cmd.opts();
+    // hardcoded
+    const sellerFeeBasisPoints = 500;
+    const creatorAddress = 'JE4UxhUcvz3JMB6j5zfkPzAXMtURamJnq15HubKP1vrb';
+    const symbol = 'MERMAID';
+
+    const walletKeyPair = loadWalletKey(keypair);
+    const anchorProgram = await loadCandyProgramV2(walletKeyPair, env, rpcUrl);
+
+    const {
+      number,
+      retainAuthority,
+      mutable,
+      price,
+      splToken,
+      treasuryWallet,
+      gatekeeper,
+      endSettings,
+      hiddenSettings,
+      whitelistMintSettings,
+      goLiveDate,
+      uuid,
+    } = await getMermaidCandyMachineV2Config(
+      walletKeyPair,
+      anchorProgram,
+      configPath,
+    );
+
+    const collectionMintPubkey = await parseCollectionMintPubkey(
+      collectionMint,
+      anchorProgram.provider.connection,
+      walletKeyPair,
+    );
+
+    const startMs = Date.now();
+    log.info('started at: ' + startMs.toString());
+    try {
+      await uploadV3({
+        cacheName,
+        env,
+        totalNFTs: number,
+        gatekeeper,
+        retainAuthority,
+        mutable,
+        price,
+        treasuryWallet,
+        anchorProgram,
+        walletKeyPair,
+        splToken,
+        endSettings,
+        hiddenSettings,
+        whitelistMintSettings,
+        goLiveDate,
+        uuid,
+        rateLimit,
+        collectionMintPubkey,
+        setCollectionMint,
+        sellerFeeBasisPoints,
+        creatorAddress,
+        symbol,
+      });
+    } catch (err) {
+      log.warn('upload was not successful, please re-run.', err);
+      process.exit(1);
+    }
+    const endMs = Date.now();
+    const timeTaken = new Date(endMs - startMs).toISOString().substr(11, 8);
+    log.info(
+      `ended at: ${new Date(endMs).toISOString()}. time taken: ${timeTaken}`,
+    );
+    process.exit(0);
+  });
 
 program.parse(process.argv);

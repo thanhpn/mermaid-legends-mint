@@ -408,6 +408,184 @@ export async function uploadV2({
   return uploadSuccessful;
 }
 
+export async function uploadV3({
+  cacheName,
+  env,
+  totalNFTs,
+  retainAuthority,
+  mutable,
+  price,
+  treasuryWallet,
+  splToken,
+  gatekeeper,
+  goLiveDate,
+  endSettings,
+  whitelistMintSettings,
+  hiddenSettings,
+  uuid,
+  walletKeyPair,
+  anchorProgram,
+  rateLimit,
+  collectionMintPubkey,
+  setCollectionMint,
+  sellerFeeBasisPoints,
+  creatorAddress,
+  symbol,
+}: {
+  cacheName: string;
+  env: 'mainnet-beta' | 'devnet';
+  totalNFTs: number;
+  retainAuthority: boolean;
+  mutable: boolean;
+  price: BN;
+  treasuryWallet: PublicKey;
+  splToken: PublicKey;
+  gatekeeper: null | {
+    expireOnUse: boolean;
+    gatekeeperNetwork: web3.PublicKey;
+  };
+  goLiveDate: null | BN;
+  endSettings: null | [number, BN];
+  whitelistMintSettings: null | {
+    mode: any;
+    mint: PublicKey;
+    presale: boolean;
+    discountPrice: null | BN;
+  };
+  hiddenSettings: null | {
+    name: string;
+    uri: string;
+    hash: Uint8Array;
+  };
+  uuid: string;
+  walletKeyPair: web3.Keypair;
+  anchorProgram: Program;
+  rateLimit: number;
+  collectionMintPubkey: null | PublicKey;
+  setCollectionMint: boolean;
+  sellerFeeBasisPoints: number;
+  creatorAddress: string;
+  symbol: string;
+}): Promise<boolean> {
+  const cacheContent = loadCache(cacheName, env);
+  if (!cacheContent || !cacheContent.items) {
+    throw new Error(
+      'Invalid Cache. Please run fetch_json command before you create candy machine',
+    );
+  }
+
+  if (!cacheContent.program) {
+    cacheContent.program = {};
+  }
+
+  let candyMachine = cacheContent.program.candyMachine
+    ? new PublicKey(cacheContent.program.candyMachine)
+    : undefined;
+
+  if (!cacheContent.program.uuid) {
+    try {
+      const remainingAccounts = [];
+
+      if (splToken) {
+        const splTokenKey = new PublicKey(splToken);
+
+        remainingAccounts.push({
+          pubkey: splTokenKey,
+          isWritable: false,
+          isSigner: false,
+        });
+      }
+
+      if (!creatorAddress) {
+        throw new Error('Creator address is missing');
+      }
+
+      // initialize candy
+      log.info(`initializing candy machine`);
+      const res = await createCandyMachineV2(
+        anchorProgram,
+        walletKeyPair,
+        treasuryWallet,
+        splToken,
+        {
+          itemsAvailable: new BN(totalNFTs),
+          uuid,
+          symbol,
+          sellerFeeBasisPoints: sellerFeeBasisPoints,
+          isMutable: mutable,
+          maxSupply: new BN(0),
+          retainAuthority: retainAuthority,
+          gatekeeper,
+          goLiveDate,
+          price,
+          endSettings,
+          whitelistMintSettings,
+          hiddenSettings,
+          creators: [
+            {
+              address: new PublicKey(creatorAddress),
+              verified: true,
+              share: 100,
+            },
+          ],
+        },
+      );
+      cacheContent.program.uuid = res.uuid;
+      cacheContent.program.candyMachine = res.candyMachine.toBase58();
+      candyMachine = res.candyMachine;
+
+      if (setCollectionMint) {
+        const collection = await setCollection(
+          walletKeyPair,
+          anchorProgram,
+          res.candyMachine,
+          collectionMintPubkey,
+        );
+        console.log('Collection: ', collection);
+        cacheContent.program.collection = collection.collectionMetadata;
+      } else {
+        console.log('No collection set');
+      }
+
+      log.info(
+        `initialized config for a candy machine with publickey: ${res.candyMachine.toBase58()}`,
+      );
+
+      saveCache(cacheName, env, cacheContent);
+    } catch (exx) {
+      log.error('Error deploying config to Solana network.', exx);
+      throw exx;
+    }
+  } else {
+    log.info(
+      `config for a candy machine with publickey: ${cacheContent.program.candyMachine} has been already initialized`,
+    );
+  }
+  console.log('candy created');
+  let uploadSuccessful = true;
+  if (!hiddenSettings) {
+    uploadSuccessful = await writeIndices({
+      anchorProgram,
+      cacheContent,
+      cacheName,
+      env,
+      candyMachine,
+      walletKeyPair,
+      rateLimit,
+    });
+
+    const uploadedItems = Object.values(cacheContent.items).filter(
+      (f: { link: string }) => !!f.link,
+    ).length;
+    uploadSuccessful = uploadSuccessful && uploadedItems === totalNFTs;
+  } else {
+    log.info('Skipping upload to chain as this is a hidden Candy Machine');
+  }
+
+  console.log(`Done. Successful = ${uploadSuccessful}.`);
+  return uploadSuccessful;
+}
+
 /**
  * The Cache object, represented in its minimal form.
  */
